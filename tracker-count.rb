@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+require 'date'
+require 'bundler/inline'
+require 'csv'
+
+gemfile do
+  source 'https://rubygems.org'
+  gem 'tracker_api'
+end
+
+token = ENV["TRACKER_TOKEN"]
+
+p "add your api token with `export TRACKER_TOKEN='KEY_FROM_TRACKER'`" if token.nil?
+
+def this_past_monday
+  date = Date.parse('Monday')
+  delta = date > Date.today ? 0 : -7
+  date + delta
+end
+
+def day_label
+  this_past_monday.strftime('%m/%d/%Y')
+end
+
+def build_query_for(team, priority)
+  "label:\"#{team}\" AND label:\"#{priority}\" AND (state:\"unscheduled\" OR state:\"unstarted\")"
+end
+
+def team_counts(project, teams)
+  priorities = %w(p0 p1 p2 p3)
+  total = 0
+  total_this_week = 0
+  bug_count = {}
+  teams.each do |team|
+    puts team
+
+    priorities.each do |priority|
+      story_count = project.stories(filter: build_query_for(team, priority)).count
+      story_count_this_week = project.stories(filter: "#{build_query_for(team, priority)} AND label:\"#{day_label}\"").count
+
+      puts "This week \t#{priority}: #{story_count_this_week}"
+      puts "Total     \t#{priority}: #{story_count}"
+      bug_count["#{team}#{priority}week"] = story_count_this_week
+      bug_count["#{team}#{priority}"] = story_count
+
+      total += story_count
+      total_this_week += story_count_this_week
+    end
+  end
+
+  puts "TOTAL THIS WEEK: #{total_this_week}"
+  puts "TOTAL: #{total}"
+  p bug_count
+  CSV.open("data.csv", "wb") {|csv| bug_count.to_a.each {|elem| csv << elem} }
+end
+
+teams = %w(mavengers snowpeople rpm m-who)
+client = TrackerApi::Client.new(token: token)
+project = client.project(407849)
+team_counts(project, teams)
